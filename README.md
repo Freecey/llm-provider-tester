@@ -12,6 +12,9 @@ Small Python smoke-test utility for checking API keys and basic model connectivi
 - Reads secrets from environment variables or a local `.env`
 - Tests multiple models per provider
 - Prints HTTP status + response snippet for quick diagnosis
+- Prints a summary table in the terminal
+- Writes a JSON log file under `logs/`
+- Classifies common failures (`AUTH`, `NOT_FOUND`, `RATE_LIMIT`, `QUOTA`, etc.)
 
 ## Setup
 Copy the example file and fill in only what you need:
@@ -39,6 +42,11 @@ Use comma-separated values:
 - `DEEPSEEK_MODELS`
 - `TOGETHER_MODELS`
 - `GEMINI_MODELS`
+
+## Output
+- Detailed per-test output
+- Summary table in terminal
+- JSON log file written to `logs/provider-test-<timestamp>.json`
 
 ## Notes
 - Keep secrets in `.env` or environment variables; do not hardcode them in the script.

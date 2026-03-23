@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import json
 import os
+from datetime import datetime, timezone
 from urllib import request, error
 
 TIMEOUT = 20
+LOG_DIR = 'logs'
 
 
 def load_dotenv(path='.env'):
@@ -34,48 +36,45 @@ def post_json(url, payload, headers):
 
 
 def test_openai(api_key, model):
-    url = 'https://api.openai.com/v1/responses'
-    payload = {'model': model, 'input': 'Reply with exactly: OK'}
-    headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
-    return post_json(url, payload, headers)
+    return post_json(
+        'https://api.openai.com/v1/responses',
+        {'model': model, 'input': 'Reply with exactly: OK'},
+        {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
+    )
 
 
 def test_deepseek(api_key, model):
-    url = 'https://api.deepseek.com/v1/chat/completions'
-    payload = {
-        'model': model,
-        'messages': [{'role': 'user', 'content': 'Reply with exactly: OK'}],
-        'max_tokens': 10,
-        'temperature': 0,
-    }
-    headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
-    return post_json(url, payload, headers)
+    return post_json(
+        'https://api.deepseek.com/v1/chat/completions',
+        {
+            'model': model,
+            'messages': [{'role': 'user', 'content': 'Reply with exactly: OK'}],
+            'max_tokens': 10,
+            'temperature': 0,
+        },
+        {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
+    )
 
 
 def test_together(api_key, model):
-    url = 'https://api.together.xyz/v1/chat/completions'
-    payload = {
-        'model': model,
-        'messages': [{'role': 'user', 'content': 'Reply with exactly: OK'}],
-        'max_tokens': 10,
-        'temperature': 0,
-    }
-    headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
-    return post_json(url, payload, headers)
+    return post_json(
+        'https://api.together.xyz/v1/chat/completions',
+        {
+            'model': model,
+            'messages': [{'role': 'user', 'content': 'Reply with exactly: OK'}],
+            'max_tokens': 10,
+            'temperature': 0,
+        },
+        {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
+    )
 
 
 def test_gemini(api_key, model):
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
-    payload = {'contents': [{'parts': [{'text': 'Reply with exactly: OK'}]}]}
-    headers = {'Content-Type': 'application/json'}
-    return post_json(url, payload, headers)
-
-
-def summarize(provider, model, status, body):
-    print(f'\n=== {provider} :: {model} ===')
-    print(f'status: {status}')
-    snippet = (body or '')[:1000]
-    print(snippet)
+    return post_json(
+        f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}',
+        {'contents': [{'parts': [{'text': 'Reply with exactly: OK'}]}]},
+        {'Content-Type': 'application/json'},
+    )
 
 
 def env_models(name, default):
@@ -85,11 +84,70 @@ def env_models(name, default):
     return [x.strip() for x in raw.split(',') if x.strip()]
 
 
+def classify(status, body):
+    text = (body or '').lower()
+    if status and 200 <= status < 300:
+        return 'OK'
+    if status == 401:
+        return 'AUTH'
+    if status == 403:
+        return 'FORBIDDEN'
+    if status == 404:
+        return 'NOT_FOUND'
+    if status == 429:
+        return 'RATE_LIMIT'
+    if status and 500 <= status < 600:
+        return 'SERVER_ERR'
+    if 'quota' in text or 'billing' in text:
+        return 'QUOTA'
+    if 'model' in text and ('not found' in text or 'unsupported' in text or 'unknown' in text):
+        return 'MODEL_ERR'
+    if status is None:
+        return 'NETWORK'
+    return 'ERROR'
+
+
+def mask_secret_text(text):
+    if not text:
+        return text
+    for key_name in ['OPENAI_API_KEY', 'DEEPSEEK_API_KEY', 'TOGETHER_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY']:
+        val = os.getenv(key_name)
+        if val:
+            text = text.replace(val, f'REDACTED_{key_name}')
+    return text
+
+
+def print_table(results):
+    headers = ['Provider', 'Model', 'HTTP', 'Result']
+    rows = [[r['provider'], r['model'], str(r['status']), r['kind']] for r in results]
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+
+    def fmt(row):
+        return ' | '.join(cell.ljust(widths[i]) for i, cell in enumerate(row))
+
+    print('\n=== Summary ===')
+    print(fmt(headers))
+    print('-+-'.join('-' * w for w in widths))
+    for row in rows:
+        print(fmt(row))
+
+
+def write_log(results):
+    os.makedirs(LOG_DIR, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    path = os.path.join(LOG_DIR, f'provider-test-{ts}.json')
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
+    return path
+
+
 def main():
     load_dotenv()
 
     tests = []
-
     openai_key = os.getenv('OPENAI_API_KEY')
     if openai_key:
         for model in env_models('OPENAI_MODELS', ['gpt-4.1-mini', 'gpt-5.4']):
@@ -111,17 +169,28 @@ def main():
             tests.append(('Gemini', model, lambda k=gemini_key, m=model: test_gemini(k, m)))
 
     if not tests:
-        print('No API keys found in env/.env. Supported vars:')
-        print('  OPENAI_API_KEY')
-        print('  DEEPSEEK_API_KEY')
-        print('  TOGETHER_API_KEY')
-        print('  GEMINI_API_KEY or GOOGLE_API_KEY')
+        print('No API keys found in env/.env.')
         return 1
 
+    results = []
     for provider, model, fn in tests:
         status, body = fn()
-        summarize(provider, model, status, body)
+        body = mask_secret_text(body)
+        kind = classify(status, body)
+        results.append({
+            'provider': provider,
+            'model': model,
+            'status': status,
+            'kind': kind,
+            'bodySnippet': (body or '')[:1200],
+        })
+        print(f'\n=== {provider} :: {model} ===')
+        print(f'HTTP: {status} | Result: {kind}')
+        print((body or '')[:700])
 
+    print_table(results)
+    log_path = write_log(results)
+    print(f'\nLog written to: {log_path}')
     return 0
 
 
