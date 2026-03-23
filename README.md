@@ -23,6 +23,14 @@ Copy the example file and fill in only what you need:
 cp .env.example .env
 ```
 
+## Virtual environment (recommended)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
 ## Usage
 Run:
 
@@ -46,8 +54,10 @@ Use comma-separated values:
 ## Output
 - Detailed per-test output
 - Summary table in terminal
+- Provider-level summary
 - JSON log file written to `logs/provider-test-<timestamp>.json`
 
 ## Notes
 - Keep secrets in `.env` or environment variables; do not hardcode them in the script.
 - This tool performs minimal API calls to validate connectivity/auth/model access.
+- `requirements.txt` is intentionally minimal because the script currently uses only Python standard library modules.
