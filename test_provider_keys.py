@@ -207,7 +207,12 @@ def main():
 
     together_key = os.getenv('TOGETHER_API_KEY')
     if together_key:
-        for model in env_models('TOGETHER_MODELS', ['moonshotai/Kimi-K2.5']):
+        for model in env_models('TOGETHER_MODELS', [
+            'moonshotai/Kimi-K2.5',
+            'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+            'deepseek-ai/DeepSeek-V3.1',
+            'deepseek-ai/DeepSeek-R1',
+        ]):
             tests.append(('Together', model, lambda k=together_key, m=model: test_together(k, m)))
 
     gemini_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')

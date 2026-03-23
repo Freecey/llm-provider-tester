@@ -51,6 +51,8 @@ Use comma-separated values:
 - `TOGETHER_MODELS`
 - `GEMINI_MODELS`
 
+Default Together candidates now include several fallback models so you can quickly see which ones your account can access.
+
 ## Output
 - Detailed per-test output
 - Summary table in terminal
