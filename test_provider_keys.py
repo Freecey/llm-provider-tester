@@ -1,11 +1,34 @@
 #!/usr/bin/env python3
 import json
 import os
+from collections import defaultdict
 from datetime import datetime, timezone
 from urllib import request, error
 
 TIMEOUT = 20
 LOG_DIR = 'logs'
+USE_COLOR = os.getenv('NO_COLOR') is None
+
+
+def color(text, kind):
+    if not USE_COLOR:
+        return text
+    colors = {
+        'green': '\033[92m',
+        'red': '\033[91m',
+        'yellow': '\033[93m',
+        'blue': '\033[94m',
+        'reset': '\033[0m',
+    }
+    return f"{colors.get(kind, '')}{text}{colors['reset']}"
+
+
+def color_result(kind):
+    if kind == 'OK':
+        return color(kind, 'green')
+    if kind in ('RATE_LIMIT', 'QUOTA'):
+        return color(kind, 'yellow')
+    return color(kind, 'red')
 
 
 def load_dotenv(path='.env'):
@@ -125,14 +148,38 @@ def print_table(results):
         for i, cell in enumerate(row):
             widths[i] = max(widths[i], len(cell))
 
-    def fmt(row):
-        return ' | '.join(cell.ljust(widths[i]) for i, cell in enumerate(row))
+    def fmt(row, colorize=False):
+        rendered = []
+        for i, cell in enumerate(row):
+            value = cell.ljust(widths[i])
+            if colorize and i == 3:
+                value = color_result(cell).ljust(widths[i] + (9 if USE_COLOR else 0))
+            rendered.append(value)
+        return ' | '.join(rendered)
 
-    print('\n=== Summary ===')
+    print('\n=== Summary by model ===')
     print(fmt(headers))
     print('-+-'.join('-' * w for w in widths))
     for row in rows:
-        print(fmt(row))
+        print(fmt(row, colorize=True))
+
+
+def print_provider_summary(results):
+    grouped = defaultdict(list)
+    for r in results:
+        grouped[r['provider']].append(r)
+
+    print('\n=== Summary by provider ===')
+    for provider, items in grouped.items():
+        kinds = [x['kind'] for x in items]
+        if any(k == 'OK' for k in kinds):
+            status = color('OK', 'green')
+        elif any(k in ('RATE_LIMIT', 'QUOTA') for k in kinds):
+            status = color('PARTIAL', 'yellow')
+        else:
+            status = color('FAIL', 'red')
+        detail = ', '.join(f"{x['model']}={x['kind']}" for x in items)
+        print(f'- {provider}: {status} ({detail})')
 
 
 def write_log(results):
@@ -185,12 +232,13 @@ def main():
             'bodySnippet': (body or '')[:1200],
         })
         print(f'\n=== {provider} :: {model} ===')
-        print(f'HTTP: {status} | Result: {kind}')
+        print(f'HTTP: {status} | Result: {color_result(kind)}')
         print((body or '')[:700])
 
     print_table(results)
+    print_provider_summary(results)
     log_path = write_log(results)
-    print(f'\nLog written to: {log_path}')
+    print(f'\nLog written to: {color(log_path, "blue")}')
     return 0
 
 
